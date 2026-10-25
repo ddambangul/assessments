@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>내륜차(Off-tracking) 기하학적 모델링 및 모퉁이 회전 궤적 시뮬레이터 (16:9 발표용)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans KR', 'Inter', sans-serif;
+      background-color: #050914;
+      color: #f1f5f9;
+      overflow-x: hidden;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Custom Range Slider */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      background: #1e293b;
+      height: 0.45rem;
+      border-radius: 9999px;
+      border: 1px solid #334155;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      margin-top: -5px;
+      background-color: #38bdf8;
+      height: 1.05rem;
+      width: 1.05rem;
+      border-radius: 9999px;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+      transition: transform 0.15s ease, background-color 0.15s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.18);
+      background-color: #7dd3fc;
+    }
+    .blueprint-card {
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(51, 65, 85, 0.85);
+    }
+    @keyframes hazardPulse {
+      0%, 100% { box-shadow: inset 0 0 0px rgba(244, 63, 94, 0); }
+      50% { box-shadow: inset 0 0 48px rgba(244, 63, 94, 0.55); }
+    }
+    .collision-vignette {
+      animation: hazardPulse 0.75s infinite ease-in-out;
+      border-color: #f43f5e !important;
+    }
+    /* Custom Scrollbar for Right Panel if needed on smaller screens */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="w-screen lg:h-screen lg:overflow-hidden flex flex-col select-none bg-[#050914]">
+
+  <!-- Compact Widescreen Top Header Bar -->
+  <header class="h-auto lg:h-14 shrink-0 border-b border-slate-800/90 bg-slate-950/90 px-4 py-2 flex flex-wrap items-center justify-between gap-2 z-30">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-sky-500/20 font-bold text-base">
+        📐
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-full">
+            2022 개정 공통수학 2 · 수행평가 발표 시뮬레이터
+          </span>
+          <span class="hidden xl:inline-block text-xs text-slate-400">원의 방정식 · 점과 직선 사이의 거리 · 부등식의 영역</span>
+        </div>
+        <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white">
+          내륜차(Off-tracking) 기하학적 모델링 및 골목길 모퉁이 회전 충돌 방지 궤적 설계
+        </h1>
+      </div>
+    </div>
+
+    <!-- 3 Quick Scenario Preset Buttons -->
+    <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+      <button id="btnScenarioCollision" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition flex items-center gap-1.5 shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+        시나리오 A: 초보 운전자 충돌 재현
+      </button>
+      <button id="btnScenarioSafe" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition flex items-center gap-1.5 shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        시나리오 B: 보고서 최적 안전 궤적
+      </button>
+      <button id="btnScenarioCritical" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition flex items-center gap-1.5 shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+        시나리오 C: 임계 접선 궤적 (간극 20cm)
+      </button>
+    </div>
+  </header>
+
+  <!-- 16:9 Widescreen Main Content Grid (74% Left Driving Canvas / 26% Right Control & Math HUD) -->
+  <main class="flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-hidden">
+
+    <!-- LEFT/CENTER: Maximized 16:9 Interactive Driving Simulation Stage (9 Columns = 75% Width) -->
+    <section class="lg:col-span-9 flex flex-col min-h-[540px] lg:min-h-0 h-full gap-2.5">
+
+      <!-- Giant Canvas Container with Floating HUD Overlays -->
+      <div id="canvasContainer" class="relative flex-1 min-h-0 w-full rounded-2xl overflow-hidden border-2 border-slate-800 bg-[#060b16] shadow-2xl transition-colors duration-200">
+        <canvas id="simCanvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+
+        <!-- TOP-CENTER PROMINENT COLLISION / SAFETY ALERT BANNER HUD -->
+        <div class="absolute top-3 left-3 right-14 z-20 pointer-events-none flex flex-col items-start sm:items-center">
+          <div id="hudAlertBanner" class="px-4 py-2 rounded-2xl font-extrabold text-xs sm:text-sm md:text-base flex items-center gap-2.5 border-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+            <span id="hudAlertIcon" class="text-lg">✅</span>
+            <span id="hudAlertText">안전 통과 궤적 확보 완료</span>
+          </div>
+        </div>
+
+        <!-- TOP-LEFT FLOATING LIVE METRICS HUD -->
+        <div class="absolute top-16 left-3 z-10 pointer-events-none hidden sm:flex flex-col gap-2 w-60">
+          <div class="bg-slate-950/85 backdrop-blur-md border border-slate-800/90 rounded-xl p-2.5 shadow-lg">
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span>기하학적 내륜차 (<span class="mono text-rose-400">ΔR</span>)</span>
+              <span class="mono text-[10px] text-slate-500">R_IF - R_IR</span>
+            </div>
+            <div class="flex items-baseline gap-1.5 mt-0.5">
+              <span id="hudDeltaR" class="mono text-xl font-black text-rose-400">86.2 cm</span>
+              <span id="hudDeltaRm" class="mono text-xs text-slate-400">(0.862m)</span>
+            </div>
+            <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+              <span class="text-slate-400">현재 모퉁이 O(0,0) 간극</span>
+              <span id="hudCurrentDist" class="mono font-extrabold text-sm text-emerald-400">+73.5 cm</span>
+            </div>
+            <div class="mt-1 flex items-center justify-between text-[11px]">
+              <span class="text-slate-400">전체 궤적 최소 이격</span>
+              <span id="hudMinClearance" class="mono font-extrabold text-xs text-emerald-300">+55.0 cm</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- BOTTOM-LEFT LEGEND & COORDINATE INFO HUD -->
+        <div class="absolute bottom-3 left-3 z-10 pointer-events-none flex flex-col gap-1.5">
+          <div class="flex flex-wrap items-center gap-2.5 text-[11px] text-slate-200 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800/90 shadow">
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-0.5 bg-cyan-400 inline-block"></span>안쪽 앞바퀴(<span class="mono text-cyan-300">R_IF</span>)
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-0.5 bg-amber-400 inline-block"></span>안쪽 뒷바퀴(<span class="mono text-amber-300">R_IR</span>)
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3.5 h-1 bg-rose-500 inline-block rounded-full"></span>차체 내측 외판(<span class="mono text-rose-300">R_body,in</span>)
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-2.5 bg-rose-500/25 border border-rose-500/60 inline-block rounded-sm"></span>내륜차 함정 영역(<span class="mono text-rose-300">ΔR</span>)
+            </span>
+          </div>
+          <div class="bg-slate-950/85 backdrop-blur-md border border-slate-800/90 rounded-xl px-3 py-1.5 text-[11px] text-slate-300 flex flex-wrap items-center gap-3">
+            <span>모퉁이 모서리: <strong class="mono text-amber-300">O(0, 0)</strong></span>
+            <span>안전 마진: <strong class="mono text-amber-300">δ = 20cm</strong></span>
+            <span>순간 회전 중심(ICR): <strong id="overlayICR" class="mono text-sky-400">C(3.08, -0.30)</strong></span>
+          </div>
+        </div>
+
+        <!-- TOP-RIGHT ZOOM & CAMERA CONTROLS -->
+        <div class="absolute top-3 right-3 z-20 flex flex-col gap-1.5">
+          <button id="btnZoomIn" title="화면 확대" class="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-100 border border-slate-700 flex items-center justify-center font-bold text-base shadow-lg transition">+</button>
+          <button id="btnZoomOut" title="화면 축소" class="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-100 border border-slate-700 flex items-center justify-center font-bold text-base shadow-lg transition">−</button>
+          <button id="btnResetView" title="시점 초기화" class="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center text-xs font-bold shadow-lg transition">16:9</button>
+        </div>
+
+        <!-- COLLISION FREEZE OVERLAY BADGE (Shown when auto-paused on impact) -->
+        <div id="impactFreezeToast" class="hidden absolute bottom-16 right-4 z-20 bg-rose-950/95 border-2 border-rose-500 text-rose-100 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce">
+          <span class="text-2xl">💥</span>
+          <div>
+            <div class="text-xs font-black text-rose-300 uppercase tracking-wider">Impact Auto-Freeze</div>
+            <div class="text-xs font-bold">차체 우측 뒷도어가 모퉁이 O(0,0)에 충돌한 순간 정지됨!</div>
+          </div>
+          <button id="btnResumeAfterImpact" class="ml-2 px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 font-extrabold text-xs transition">
+            계속 주행 ▶
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom Playback, Progress Scrubber & Driving Speed Control Bar -->
+      <div class="blueprint-card rounded-2xl px-4 py-2.5 shrink-0 flex flex-wrap items-center justify-between gap-3">
+        <!-- Play / Reset Controls -->
+        <div class="flex items-center gap-2">
+          <button id="btnPlayPause" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-lg shadow-sky-500/25">
+            <span id="playIcon">▶</span>
+            <span id="playLabel">주행 재생</span>
+          </button>
+          <button id="btnResetAnim" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700">
+            ⏮ 처음
+          </button>
+        </div>
+
+        <!-- Progress Scrubber -->
+        <div class="flex-1 flex items-center gap-2.5 min-w-[180px]">
+          <span class="text-xs font-bold text-slate-400 whitespace-nowrap">주행 위치</span>
+          <input id="sliderProgress" type="range" min="0" max="100" step="0.2" value="54" class="w-full" />
+          <span id="labelProgress" class="mono text-xs font-extrabold text-sky-400 w-12 text-right">54%</span>
+        </div>
+
+        <!-- NEW: Driving Speed Multiplier & km/h Control -->
+        <div class="flex flex-wrap items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-bold text-slate-300">🚗 주행 속도:</span>
+            <span id="labelSpeedKmh" class="mono text-xs font-extrabold text-amber-400 w-16">8.0 km/h</span>
+          </div>
+          <input id="sliderSpeed" type="range" min="0.2" max="2.5" step="0.05" value="1.0" class="w-24 sm:w-28" />
+          <div class="flex items-center gap-1">
+            <button data-speed="0.25" class="speed-btn px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">0.25x 초저속</button>
+            <button data-speed="0.5" class="speed-btn px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">0.5x</button>
+            <button data-speed="1.0" class="speed-btn px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/50 transition">1.0x</button>
+            <button data-speed="2.0" class="speed-btn px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">2.0x</button>
+          </div>
+        </div>
+
+        <!-- Checkboxes: Auto-pause on impact & Swept path -->
+        <div class="flex items-center gap-3 text-xs">
+          <label class="flex items-center gap-1.5 text-rose-300 font-semibold cursor-pointer">
+            <input id="chkAutoPauseImpact" type="checkbox" checked class="rounded bg-slate-800 border-rose-500 text-rose-500 focus:ring-0" />
+            <span>충돌 순간 자동 일시정지</span>
+          </label>
+          <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input id="chkShowSwept" type="checkbox" checked class="rounded bg-slate-800 border-slate-600 text-sky-500 focus:ring-0" />
+            <span>차체 잔상</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Compact Parameter Controls & Real-Time Math Proof Dashboard (3 Columns = 25% Width) -->
+    <aside class="lg:col-span-3 flex flex-col gap-2.5 min-h-0 h-full overflow-y-auto pr-0.5">
+
+      <!-- 1. Vehicle Preset & Real Specifications -->
+      <div class="blueprint-card rounded-2xl p-3.5 space-y-3 shrink-0">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h2 class="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+            <span>⚙️ 차량 제원 및 조향 변수</span>
+          </h2>
+          <select id="selectVehicle" class="bg-slate-900 border border-slate-700 text-[11px] text-sky-300 font-bold rounded-lg px-2 py-1 focus:outline-none focus:border-sky-500">
+            <option value="suv" selected>준중형 SUV (투싼 NX4)</option>
+            <option value="van">대형 RV (카니발 KA4)</option>
+            <option value="compact">경형 SUV (캐스퍼)</option>
+          </select>
+        </div>
+
+        <!-- 4 Spec Pills -->
+        <div class="grid grid-cols-4 gap-1.5 text-center bg-slate-900/90 p-2 rounded-xl border border-slate-800/90 text-[10px]">
+          <div>
+            <span class="text-slate-400 block">축거(L)</span>
+            <span id="specL" class="mono font-bold text-slate-100">2.75m</span>
+          </div>
+          <div>
+            <span class="text-slate-400 block">전폭(W)</span>
+            <span id="specW" class="mono font-bold text-slate-100">1.86m</span>
+          </div>
+          <div>
+            <span class="text-slate-400 block">윤거(T)</span>
+            <span id="specT" class="mono font-bold text-slate-100">1.62m</span>
+          </div>
+          <div>
+            <span class="text-slate-400 block">앞오버행</span>
+            <span id="specF" class="mono font-bold text-slate-100">0.90m</span>
+          </div>
+        </div>
+
+        <!-- 3 Core Mathematical Sliders -->
+        <div class="space-y-3">
+          <!-- Steering Angle alpha -->
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <label for="sliderAlpha" class="font-bold text-slate-200">
+                1. 앞바퀴 조향각 (<span class="mono text-sky-400">α</span>)
+              </label>
+              <span id="labelAlpha" class="mono font-extrabold text-sky-400">30.0°</span>
+            </div>
+            <input id="sliderAlpha" type="range" min="15" max="40" step="0.5" value="30" class="w-full" />
+            <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+              <span>완만 (15°)</span>
+              <span>보고서 기준 (30°)</span>
+              <span>최대 (40°)</span>
+            </div>
+          </div>
+
+          <!-- Initial Wall Clearance D -->
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <label for="sliderD" class="font-bold text-slate-200">
+                2. 우측 벽면 초기 이격 (<span class="mono text-emerald-400">D</span>)
+              </label>
+              <span id="labelD" class="mono font-extrabold text-emerald-400">0.75 m (75 cm)</span>
+            </div>
+            <input id="sliderD" type="range" min="0.10" max="1.50" step="0.02" value="0.75" class="w-full" />
+            <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+              <span>벽 밀착(0.1m)</span>
+              <span>권장 안전(0.75m)</span>
+              <span>여유(1.5m)</span>
+            </div>
+          </div>
+
+          <!-- Steering Initiation y_c -->
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <label for="sliderYc" class="font-bold text-slate-200">
+                3. 회전 개시 뒷바퀴 위치 (<span class="mono text-amber-400">y_c</span>)
+              </label>
+              <span id="labelYc" class="mono font-extrabold text-amber-400">-0.30 m</span>
+            </div>
+            <input id="sliderYc" type="range" min="-2.20" max="0.50" step="0.02" value="-0.30" class="w-full" />
+            <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+              <span>조기 조향(-2.2m)</span>
+              <span>B필러 통과(-0.3m)</span>
+              <span>지연(+0.5m)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Real-Time Mathematical Derivation & Inequality Verification -->
+      <div class="blueprint-card rounded-2xl p-3.5 flex-1 flex flex-col justify-between space-y-2.5">
+        <div>
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+            <h2 class="text-xs font-extrabold text-white flex items-center gap-1.5">
+              <span>📘 공통수학 2 실시간 수식 판정</span>
+            </h2>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-bold">도형의 방정식</span>
+          </div>
+
+          <div class="space-y-2 text-[11px]">
+            <!-- Formula 1: Off-tracking -->
+            <div class="bg-slate-900/95 border border-slate-800 rounded-xl p-2.5">
+              <div class="text-slate-400 font-bold text-[10px] mb-1">① 아커만 기하와 내륜차 (ΔR = R_IF - R_IR)</div>
+              <div id="mathFormula1" class="mono text-[11px] text-slate-200 leading-relaxed">
+                R₀ = 2.75 / tan(30.0°) = <span class="text-sky-400 font-bold">4.763m</span><br/>
+                R_IF = <span class="text-cyan-300">4.815m</span>, R_IR = <span class="text-amber-300">3.953m</span><br/>
+                ∴ ΔR = <span class="text-rose-400 font-extrabold">0.862m (86.2cm 파고듦)</span>
+              </div>
+            </div>
+
+            <!-- Formula 2: Circle Equation -->
+            <div class="bg-slate-900/95 border border-slate-800 rounded-xl p-2.5">
+              <div class="text-slate-400 font-bold text-[10px] mb-1">② 차체 내측 궤적 원의 방정식</div>
+              <div id="mathFormula2" class="mono text-[11px] text-slate-200 leading-relaxed">
+                (x - 3.08)² + (y + 0.30)² = <span class="text-indigo-300 font-bold">3.833²</span>
+              </div>
+            </div>
+
+            <!-- Formula 3: Distance & Inequality Region -->
+            <div class="bg-slate-900/95 border border-slate-800 rounded-xl p-2.5">
+              <div class="text-slate-400 font-bold text-[10px] mb-1">③ 점 O(0,0)과 회전중심 C 거리 부등식 판정</div>
+              <div id="mathFormula3" class="mono text-[11px] text-slate-200 leading-relaxed">
+                • 안전 조건: <span class="text-amber-300">d(C,O) ≥ R_body,in + δ</span><br/>
+                • 계산값: d(C,O) = √(x_c² + y_c²) = <span class="text-sky-300 font-bold">3.10m</span><br/>
+                • 최소 간극: <span class="text-emerald-400 font-extrabold">+55.0 cm (안전)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Engineering Commentary Box -->
+        <div id="engineeringTip" class="rounded-xl p-2.5 text-[11px] bg-sky-950/60 border border-sky-500/40 text-sky-200 leading-relaxed">
+          💡 <strong>발표 팁:</strong> 상단 <strong>[시나리오 A]</strong>를 누르고 <strong>[0.25x 초저속]</strong>으로 재생하면, 앞바퀴는 모퉁이를 통과하지만 우측 뒷문이 모퉁이 O(0,0)를 긁는 순간 화면이 자동 정지됩니다.
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. Vehicle Presets & Global State
+    // =========================================================================
+    const VEHICLE_PRESETS = {
+      suv: {
+        name: '준중형 SUV (투싼 NX4)',
+        L: 2.75,      // 축거 (Wheelbase, m)
+        W: 1.86,      // 전폭 (Overall Width, m)
+        T: 1.62,      // 윤거 (Track Width, m)
+        F: 0.90,      // 앞 오버행 (Front Overhang, m)
+        R_over: 0.98  // 뒤 오버행 (Rear Overhang, m)
+      },
+      van: {
+        name: '대형 RV (카니발 KA4)',
+        L: 3.09,
+        W: 1.99,
+        T: 1.70,
+        F: 0.95,
+        R_over: 1.11
+      },
+      compact: {
+        name: '경형 SUV (캐스퍼)',
+        L: 2.40,
+        W: 1.59,
+        T: 1.40,
+        F: 0.68,
+        R_over: 0.52
+      }
+    };
+
+    const state = {
+      presetKey: 'suv',
+      alphaDeg: 30.0,         // Steering angle (deg)
+      D: 0.75,                // Initial lateral clearance from right wall x=0 (m)
+      yc: -0.30,              // Rear axle y-coordinate when steering begins (m)
+      safetyMargin: 0.20,     // delta = 0.20m (20cm)
+      progress: 54,           // 0 to 100 (%)
+      speedMultiplier: 1.0,   // 0.2x to 2.5x (1.0x = 8.0 km/h reference)
+      isPlaying: false,
+      autoPauseOnImpact: true,
+      hasPausedForCurrentImpact: false,
+      showSwept: true,
+
+      // Camera / Viewport for 16:9 Canvas
+      scale: 74,              // pixels per meter (larger for 16:9 presentation)
+      panX: -75,
+      panY: 65,
+      isDragging: false,
+      dragStartX: 0,
+      dragStartY: 0,
+
+      // Visual Effect Timers & Particles
+      pulsePhase: 0,
+      shakeIntensity: 0,
+      sparks: []
+    };
+
+    // DOM Elements
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const canvasContainer = document.getElementById('canvasContainer');
+
+    const selectVehicle = document.getElementById('selectVehicle');
+    const sliderAlpha = document.getElementById('sliderAlpha');
+    const sliderD = document.getElementById('sliderD');
+    const sliderYc = document.getElementById('sliderYc');
+    const sliderProgress = document.getElementById('sliderProgress');
+    const sliderSpeed = document.getElementById('sliderSpeed');
+    const chkAutoPauseImpact = document.getElementById('chkAutoPauseImpact');
+    const chkShowSwept = document.getElementById('chkShowSwept');
+    const impactFreezeToast = document.getElementById('impactFreezeToast');
+
+    // =========================================================================
+    // 2. Core Mathematical & Kinematic Engine (2022 Common Math 2)
+    // =========================================================================
+    function computeKinematics() {
+      const v = VEHICLE_PRESETS[state.presetKey];
+      const alphaRad = (state.alphaDeg * Math.PI) / 180;
+
+      // 1. Reference radius R0 from rear axle center M to Instantaneous Center C
+      const R0 = v.L / Math.tan(alphaRad);
+
+      // 2. Inner Rear Wheel (R_IR) & Inner Front Wheel (R_IF)
+      const R_IR = R0 - v.T / 2;
+      const R_IF = Math.sqrt(R_IR * R_IR + v.L * v.L);
+      const deltaR = R_IF - R_IR;
+
+      // Outer radii & body radii
+      const R_OR = R0 + v.T / 2;
+      const R_OF = Math.sqrt(R_OR * R_OR + v.L * v.L);
+      const R_body_in = R0 - v.W / 2;
+      const R_body_out = Math.sqrt(Math.pow(R0 + v.W / 2, 2) + Math.pow(v.L + v.F, 2));
+
+      // Ackermann individual front wheel angles
+      const alphaInner = Math.atan2(v.L, R_IR);
+      const alphaOuter = Math.atan2(v.L, R_OR);
+
+      // 3. Coordinate geometry setup:
+      // Corner obstacle occupies Quadrant IV: { x >= 0, y <= 0 }, with corner vertex at O(0,0).
+      // Vehicle approaches upward (+y) in x < 0, with right body side at x = -D.
+      // At y = yc, vehicle begins 90-degree clockwise turn around C(xc, yc).
+      const xc = -state.D + R_body_in;
+      const yc = state.yc;
+
+      // Distance from C(xc, yc) to Corner O(0,0)
+      const distCO = Math.sqrt(xc * xc + yc * yc);
+
+      // Evaluate full trajectory clearance AND current instantaneous pose collision state
+      const pathEval = evaluateFullTrajectoryClearance(v, xc, yc, R_body_in);
+      const currentPose = getCarPoseAtProgress(state.progress, v, xc, yc, R_body_in);
+      const currentEval = evaluatePoseCollision(currentPose, v);
+
+      return {
+        v,
+        alphaRad,
+        alphaInner,
+        alphaOuter,
+        R0,
+        R_IR,
+        R_IF,
+        R_OR,
+        R_OF,
+        R_body_in,
+        R_body_out,
+        deltaR,
+        xc,
+        yc,
+        distCO,
+        minClearance: pathEval.minDist,
+        firstImpactProgress: pathEval.firstImpactProgress,
+        currentPose,
+        currentEval
+      };
+    }
+
+    // Evaluates a single vehicle pose against the obstacle quadrant { x >= 0, y <= 0 }
+    // Returns instantaneous minimum distance, scraped segment bounds [sMin, sMax], and world impact point
+    function evaluatePoseCollision(pose, v) {
+      let minDist = Infinity;
+      let closestWorldPt = { x: 0, y: 0 };
+      let sImpactStart = null;
+      let sImpactEnd = null;
+      let isCurrentlyColliding = false;
+      let isCurrentlyWarning = false;
+
+      const step = 0.06; // High resolution along right body edge (-R_over to L + F)
+      for (let s = -v.R_over; s <= v.L + v.F; s += step) {
+        const wx = pose.mx + (v.W / 2) * Math.cos(pose.theta) + s * Math.sin(pose.theta);
+        const wy = pose.my - (v.W / 2) * Math.sin(pose.theta) + s * Math.cos(pose.theta);
+
+        let d;
+        if (wx >= 0 && wy <= 0) {
+          // Inside obstacle quadrant { x >= 0, y <= 0 }
+          d = -Math.min(wx, -wy);
+        } else if (wx < 0 && wy <= 0) {
+          d = -wx; // Distance to entry wall x = 0
+        } else if (wx >= 0 && wy > 0) {
+          d = wy;  // Distance to exit wall y = 0
+        } else {
+          d = Math.sqrt(wx * wx + wy * wy); // Distance to corner O(0,0)
+        }
+
+        if (d < minDist) {
+          minDist = d;
+          closestWorldPt = { x: wx, y: wy };
+        }
+
+        if (d <= 0.005) {
+          isCurrentlyColliding = true;
+          if (sImpactStart === null) sImpactStart = s;
+          sImpactEnd = s;
+        } else if (d < state.safetyMargin) {
+          isCurrentlyWarning = true;
+        }
+      }
+
+      return {
+        minDist,
+        closestWorldPt,
+        isCurrentlyColliding,
+        isCurrentlyWarning,
+        sImpactStart,
+        sImpactEnd
+      };
+    }
+
+    // Scans entire path (0% ~ 100%) to find overall minimum clearance & exact progress of first impact
+    function evaluateFullTrajectoryClearance(v, xc, yc, R_body_in) {
+      let minDist = Infinity;
+      let firstImpactProgress = null;
+
+      const steps = 120;
+      for (let i = 0; i <= steps; i++) {
+        const p = (i / steps) * 100;
+        const pose = getCarPoseAtProgress(p, v, xc, yc, R_body_in);
+        const res = evaluatePoseCollision(pose, v);
+        if (res.minDist < minDist) {
+          minDist = res.minDist;
+        }
+        if (res.isCurrentlyColliding && firstImpactProgress === null) {
+          firstImpactProgress = p;
+        }
+      }
+      return { minDist, firstImpactProgress };
+    }
+
+    function getCarPoseAtProgress(progressPct, v, xc, yc, R_body_in) {
+      const R0 = R_body_in + v.W / 2;
+      const startY = yc - 3.0;
+      const endX = xc + 3.0;
+
+      if (progressPct <= 25) {
+        const t = progressPct / 25;
+        const my = startY + t * (yc - startY);
+        const mx = xc - R0;
+        return { mx, my, theta: 0, isTurning: false, turnRatio: 0 };
+      } else if (progressPct <= 75) {
+        const t = (progressPct - 25) / 50;
+        const theta = t * (Math.PI / 2);
+        const mx = xc - R0 * Math.cos(theta);
+        const my = yc + R0 * Math.sin(theta);
+        return { mx, my, theta, isTurning: true, turnRatio: 1 };
+      } else {
+        const t = (progressPct - 75) / 25;
+        const mx = xc + t * (endX - xc);
+        const my = yc + R0;
+        return { mx, my, theta: Math.PI / 2, isTurning: false, turnRatio: 0 };
+      }
+    }
+
+    // =========================================================================
+    // 3. Collision Sparks & Visual Effect System
+    // =========================================================================
+    function spawnCollisionSparks(wx, wy, count = 4) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.8 + Math.random() * 2.8;
+        state.sparks.push({
+          wx,
+          wy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1.0,
+          decay: 0.04 + Math.random() * 0.04,
+          color: Math.random() > 0.4 ? '#fbbf24' : '#f43f5e'
+        });
+      }
+      if (state.sparks.length > 60) {
+        state.sparks.splice(0, state.sparks.length - 60);
+      }
+    }
+
+    function updateAndDrawSparks(width, height) {
+      for (let i = state.sparks.length - 1; i >= 0; i--) {
+        const sp = state.sparks[i];
+        sp.wx += sp.vx * 0.025;
+        sp.wy += sp.vy * 0.025;
+        sp.life -= sp.decay;
+        if (sp.life <= 0) {
+          state.sparks.splice(i, 1);
+          continue;
+        }
+        const pt = worldToScreen(sp.wx, sp.wy, width, height);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, sp.life);
+        ctx.fillStyle = sp.color;
+        ctx.shadowColor = sp.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 2.5 * sp.life + 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // =========================================================================
+    // 4. UI & HUD Updates
+    // =========================================================================
+    function updateDashboardAndHUD(k) {
+      // Vehicle Spec Pills
+      document.getElementById('specL').textContent = `${k.v.L.toFixed(2)}m`;
+      document.getElementById('specW').textContent = `${k.v.W.toFixed(2)}m`;
+      document.getElementById('specT').textContent = `${k.v.T.toFixed(2)}m`;
+      document.getElementById('specF').textContent = `${k.v.F.toFixed(2)}m`;
+
+      // Sliders & Speed Label
+      document.getElementById('labelAlpha').textContent = `${state.alphaDeg.toFixed(1)}°`;
+      document.getElementById('labelD').textContent = `${state.D.toFixed(2)} m (${Math.round(state.D * 100)} cm)`;
+      document.getElementById('labelYc').textContent = `${state.yc >= 0 ? '+' : ''}${state.yc.toFixed(2)} m`;
+      document.getElementById('labelProgress').textContent = `${Math.round(state.progress)}%`;
+
+      const kmh = (state.speedMultiplier * 8.0).toFixed(1);
+      document.getElementById('labelSpeedKmh').textContent = `${kmh} km/h (${state.speedMultiplier.toFixed(2)}x)`;
+
+      // Highlight active speed multiplier preset button
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        const sp = parseFloat(btn.getAttribute('data-speed'));
+        if (Math.abs(sp - state.speedMultiplier) < 0.03) {
+          btn.className = 'speed-btn px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500 text-slate-950 border border-sky-400 transition';
+        } else {
+          btn.className = 'speed-btn px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition';
+        }
+      });
+
+      // Top-left Floating HUD metrics
+      document.getElementById('hudDeltaR').textContent = `${(k.deltaR * 100).toFixed(1)} cm`;
+      document.getElementById('hudDeltaRm').textContent = `(${k.deltaR.toFixed(3)}m)`;
+      document.getElementById('overlayICR').textContent = `C(${k.xc.toFixed(2)}, ${k.yc.toFixed(2)})`;
+
+      const curClearanceCm = k.currentEval.minDist * 100;
+      const minClearanceCm = k.minClearance * 100;
+
+      const hudCurrentDistEl = document.getElementById('hudCurrentDist');
+      const hudMinClearanceEl = document.getElementById('hudMinClearance');
+
+      hudCurrentDistEl.textContent = `${curClearanceCm >= 0 ? '+' : ''}${curClearanceCm.toFixed(1)} cm`;
+      hudMinClearanceEl.textContent = `${minClearanceCm >= 0 ? '+' : ''}${minClearanceCm.toFixed(1)} cm`;
+
+      // Top-center HUD Alert Banner & Canvas Border Effect
+      const hudBanner = document.getElementById('hudAlertBanner');
+      const hudIcon = document.getElementById('hudAlertIcon');
+      const hudText = document.getElementById('hudAlertText');
+      const tipEl = document.getElementById('engineeringTip');
+
+      if (k.currentEval.isCurrentlyColliding) {
+        // ACTIVE IMPACT RIGHT NOW!
+        canvasContainer.classList.add('collision-vignette');
+        hudBanner.className = 'px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm md:text-base flex items-center gap-2.5 border-2 bg-rose-600/95 border-rose-300 text-white shadow-2xl shadow-rose-600/50 scale-[1.02] transition-all';
+        hudIcon.textContent = '🚨';
+        hudText.textContent = `[충돌 발생!] 내륜차(${(k.deltaR * 100).toFixed(1)}cm)로 인해 우측 차체가 모퉁이 O(0,0)를 침범했습니다! (침범 깊이: ${Math.abs(curClearanceCm).toFixed(1)}cm)`;
+        hudCurrentDistEl.className = 'mono font-extrabold text-sm text-rose-400';
+      } else if (k.minClearance < 0) {
+        // Trajectory WILL collide (or already collided at another point)
+        canvasContainer.classList.remove('collision-vignette');
+        hudBanner.className = 'px-4 py-2 rounded-2xl font-extrabold text-xs sm:text-sm md:text-base flex items-center gap-2 border-2 bg-rose-950/90 border-rose-500/80 text-rose-200 shadow-xl transition-all';
+        hudIcon.textContent = '⚠️';
+        hudText.textContent = `[충돌 위험 궤적] 이 경로는 회전 중 모퉁이를 최대 ${Math.abs(minClearanceCm).toFixed(1)}cm 침범합니다! (현재 간극: ${curClearanceCm >= 0 ? '+' : ''}${curClearanceCm.toFixed(1)}cm)`;
+        hudCurrentDistEl.className = 'mono font-extrabold text-sm text-amber-300';
+      } else if (k.minClearance < state.safetyMargin) {
+        // Within 20cm safety margin
+        canvasContainer.classList.remove('collision-vignette');
+        hudBanner.className = 'px-4 py-2 rounded-2xl font-extrabold text-xs sm:text-sm md:text-base flex items-center gap-2 border-2 bg-amber-950/90 border-amber-400/80 text-amber-200 shadow-xl transition-all';
+        hudIcon.textContent = '⚠️';
+        hudText.textContent = `[안전 마진 부족] 모퉁이 최소 이격 거리(${minClearanceCm.toFixed(1)}cm)가 안전 기준(20cm)보다 좁습니다.`;
+        hudCurrentDistEl.className = 'mono font-extrabold text-sm text-amber-400';
+      } else {
+        // Completely Safe
+        canvasContainer.classList.remove('collision-vignette');
+        hudBanner.className = 'px-4 py-2 rounded-2xl font-extrabold text-xs sm:text-sm md:text-base flex items-center gap-2 border-2 bg-emerald-950/90 border-emerald-500/80 text-emerald-200 shadow-xl transition-all';
+        hudIcon.textContent = '✅';
+        hudText.textContent = `[안전 통과] 내륜차(${(k.deltaR * 100).toFixed(1)}cm) 극복 완료! 모퉁이 최소 이격 +${minClearanceCm.toFixed(1)}cm 확보 (안전마진 20cm 이상)`;
+        hudCurrentDistEl.className = 'mono font-extrabold text-sm text-emerald-400';
+      }
+
+      hudMinClearanceEl.className = k.minClearance < 0
+        ? 'mono font-extrabold text-xs text-rose-400'
+        : (k.minClearance < state.safetyMargin ? 'mono font-extrabold text-xs text-amber-300' : 'mono font-extrabold text-xs text-emerald-300');
+
+      // Update Right Panel Live Math Formulas
+      document.getElementById('mathFormula1').innerHTML =
+        `R₀ = ${k.v.L.toFixed(2)} / tan(${state.alphaDeg.toFixed(1)}°) = <span class="text-sky-400 font-bold">${k.R0.toFixed(3)}m</span><br/>` +
+        `R_IF = <span class="text-cyan-300">${k.R_IF.toFixed(3)}m</span>, R_IR = <span class="text-amber-300">${k.R_IR.toFixed(3)}m</span><br/>` +
+        `∴ ΔR = <span class="text-rose-400 font-extrabold">${k.deltaR.toFixed(3)}m (${(k.deltaR * 100).toFixed(1)}cm 파고듦)</span>`;
+
+      const signXc = k.xc >= 0 ? `- ${k.xc.toFixed(2)}` : `+ ${Math.abs(k.xc).toFixed(2)}`;
+      const signYc = k.yc >= 0 ? `- ${k.yc.toFixed(2)}` : `+ ${Math.abs(k.yc).toFixed(2)}`;
+      document.getElementById('mathFormula2').innerHTML =
+        `(x ${signXc})² + (y ${signYc})² = <span class="text-indigo-300 font-bold">${k.R_body_in.toFixed(3)}²</span>`;
+
+      const reqDist = k.R_body_in + state.safetyMargin;
+      const statusBadgeHtml = k.minClearance < 0
+        ? `<span class="text-rose-400 font-extrabold">${minClearanceCm.toFixed(1)} cm (충돌!)</span>`
+        : (k.minClearance < state.safetyMargin
+          ? `<span class="text-amber-300 font-extrabold">+${minClearanceCm.toFixed(1)} cm (마진부족)</span>`
+          : `<span class="text-emerald-400 font-extrabold">+${minClearanceCm.toFixed(1)} cm (안전통과)</span>`);
+
+      document.getElementById('mathFormula3').innerHTML =
+        `• 안전 부등식: d(C,O) ≥ R_body,in + δ (${reqDist.toFixed(2)}m)<br/>` +
+        `• 중심~원점 거리: d(C,O) = <span class="text-sky-300 font-bold">${k.distCO.toFixed(3)}m</span><br/>` +
+        `• 최소 이격 판정: ${statusBadgeHtml}`;
+
+      if (k.currentEval.isCurrentlyColliding) {
+        tipEl.className = 'rounded-xl p-2.5 text-[11px] bg-rose-950/80 border border-rose-500/60 text-rose-100 leading-relaxed';
+        tipEl.innerHTML = `💥 <strong>충돌 정밀 분석:</strong> 앞바퀴(청록색 궤적)는 모퉁이를 여유 있게 벗어났으나, 회전 중심 C가 뒷바퀴 축 연장선에 있어 우측 뒷도어가 <strong>${Math.abs(curClearanceCm).toFixed(1)}cm</strong> 안쪽으로 침범했습니다.`;
+      } else {
+        tipEl.className = 'rounded-xl p-2.5 text-[11px] bg-sky-950/60 border border-sky-500/40 text-sky-200 leading-relaxed';
+        tipEl.innerHTML = `💡 <strong>발표 시연 팁:</strong> 하단 속도 조절 바에서 <strong>[0.25x 초저속]</strong>을 선택하면 모퉁이 O(0,0) 통과 순간의 기하학적 거리 변화를 정밀하게 설명할 수 있습니다.`;
+      }
+    }
+
+    // =========================================================================
+    // 5. 2D Canvas Rendering (16:9 Presentation Stage)
+    // =========================================================================
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      renderScene();
+    }
+
+    function worldToScreen(wx, wy, width, height) {
+      const shakeX = state.shakeIntensity > 0 ? (Math.random() - 0.5) * state.shakeIntensity : 0;
+      const shakeY = state.shakeIntensity > 0 ? (Math.random() - 0.5) * state.shakeIntensity : 0;
+      const cx = width * 0.47 + state.panX + shakeX;
+      const cy = height * 0.57 + state.panY + shakeY;
+      return {
+        x: cx + wx * state.scale,
+        y: cy - wy * state.scale
+      };
+    }
+
+    function renderScene() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      const k = computeKinematics();
+      updateDashboardAndHUD(k);
+
+      const origin = worldToScreen(0, 0, width, height);
+      const icr = worldToScreen(k.xc, k.yc, width, height);
+
+      // 1. Coordinate Grid (0.5m & 1.0m)
+      drawCoordinateGrid(width, height, origin);
+
+      // 2. Road & Corner Obstacle O(0,0) with Safety Margin Zone
+      drawRoadAndObstacle(width, height, origin, k);
+
+      // 3. Concentric Trajectory Circles & Off-tracking Swept Zone (ΔR)
+      drawTrajectoryCircles(width, height, icr, k);
+
+      // 4. Swept Vehicle Ghost Envelope
+      if (state.showSwept) {
+        drawSweptBodyEnvelope(width, height, k);
+      }
+
+      // 5. Ackermann Rays & Current Vehicle Pose
+      drawAckermannGeometry(width, height, k.currentPose, icr, k);
+      drawVehicle(width, height, k.currentPose, k);
+
+      // 6. Explicit Dramatic Collision Effects (Shockwave rings, Sparks, Callout)
+      if (k.currentEval.isCurrentlyColliding) {
+        drawDramaticCollisionEffect(width, height, origin, k);
+      } else if (k.currentEval.isCurrentlyWarning) {
+        drawWarningPulseEffect(width, height, origin, k);
+      }
+
+      updateAndDrawSparks(width, height);
+
+      // 7. Key Mathematical Annotations (O(0,0), C(xc,yc), D, Current Clearance Vector)
+      drawAnnotations(width, height, origin, icr, k);
+    }
+
+    function drawCoordinateGrid(width, height, origin) {
+      const stepHalf = state.scale * 0.5;
+      const stepMeter = state.scale * 1.0;
+
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = origin.x % stepHalf; x < width; x += stepHalf) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = origin.y % stepHalf; y < height; y += stepHalf) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.8)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = origin.x % stepMeter; x < width; x += stepMeter) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = origin.y % stepMeter; y < height; y += stepMeter) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+
+      // X and Y Axes
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, origin.y);
+      ctx.lineTo(width, origin.y);
+      ctx.moveTo(origin.x, 0);
+      ctx.lineTo(origin.x, height);
+      ctx.stroke();
+
+      // Axis Numbers
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
+      ctx.font = '11px "JetBrains Mono", monospace';
+      for (let m = -12; m <= 16; m++) {
+        if (m === 0) continue;
+        const sx = origin.x + m * stepMeter;
+        if (sx > 30 && sx < width - 30) {
+          ctx.fillText(`${m}m`, sx - 9, origin.y + 15);
+        }
+        const sy = origin.y - m * stepMeter;
+        if (sy > 30 && sy < height - 30) {
+          ctx.fillText(`${m}m`, origin.x + 6, sy + 4);
+        }
+      }
+    }
+
+    function drawRoadAndObstacle(width, height, origin, k) {
+      const isCollidingNow = k.currentEval.isCurrentlyColliding;
+
+      // Obstacle Building Quadrant (x >= 0, y <= 0)
+      ctx.save();
+      ctx.fillStyle = isCollidingNow ? 'rgba(127, 29, 29, 0.55)' : 'rgba(30, 41, 59, 0.9)';
+      ctx.fillRect(origin.x, origin.y, width - origin.x, height - origin.y);
+
+      // Architectural Diagonal Hatching
+      ctx.beginPath();
+      ctx.rect(origin.x, origin.y, width - origin.x, height - origin.y);
+      ctx.clip();
+      ctx.strokeStyle = isCollidingNow ? 'rgba(244, 63, 94, 0.35)' : 'rgba(71, 85, 105, 0.38)';
+      ctx.lineWidth = 1.5;
+      const maxDim = width + height;
+      for (let d = -maxDim; d < maxDim; d += 18) {
+        ctx.moveTo(origin.x + d, origin.y);
+        ctx.lineTo(origin.x + d - 500, origin.y + 500);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Wall Boundary Lines x=0 (y<=0) and y=0 (x>=0)
+      ctx.strokeStyle = isCollidingNow ? '#f43f5e' : '#f59e0b';
+      ctx.lineWidth = isCollidingNow ? 4 : 3;
+      ctx.beginPath();
+      ctx.moveTo(origin.x, height);
+      ctx.lineTo(origin.x, origin.y);
+      ctx.lineTo(width, origin.y);
+      ctx.stroke();
+
+      // 20cm Safety Margin Boundary (delta = 0.20m)
+      const marginPx = state.safetyMargin * state.scale;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(origin.x - marginPx, height);
+      ctx.lineTo(origin.x - marginPx, origin.y);
+      ctx.arc(origin.x, origin.y, marginPx, Math.PI, Math.PI * 1.5, false);
+      ctx.lineTo(width, origin.y - marginPx);
+      ctx.stroke();
+      ctx.restore();
+
+      // Obstacle Title
+      ctx.fillStyle = isCollidingNow ? '#fda4af' : '#fbbf24';
+      ctx.font = 'bold 13px "Noto Sans KR", sans-serif';
+      ctx.fillText('🏢 골목 직각 모퉁이 장애물 (기둥/담벼락)', origin.x + 18, origin.y + 34);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px "Noto Sans KR", sans-serif';
+      ctx.fillText('진입 벽면: x = 0 (y ≤ 0)   |   진출 벽면: y = 0 (x ≥ 0)', origin.x + 18, origin.y + 54);
+    }
+
+    function drawTrajectoryCircles(width, height, icr, k) {
+      const rIF_px = k.R_IF * state.scale;
+      const rIR_px = k.R_IR * state.scale;
+      const rBodyIn_px = k.R_body_in * state.scale;
+      const rBodyOut_px = k.R_body_out * state.scale;
+
+      // 1. Shaded Off-tracking Trap Zone (ΔR between R_IF and R_IR)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(icr.x, icr.y, rIF_px, Math.PI * 0.85, Math.PI * 1.65, false);
+      ctx.arc(icr.x, icr.y, rIR_px, Math.PI * 1.65, Math.PI * 0.85, true);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(244, 63, 94, 0.17)';
+      ctx.fill();
+      ctx.restore();
+
+      // 2. Concentric Trajectory Circles centered at C(xc, yc)
+      drawCircle(icr.x, icr.y, rBodyOut_px, 'rgba(74, 222, 128, 0.3)', 1.2, [4, 6]);
+      drawCircle(icr.x, icr.y, rIF_px, 'rgba(34, 211, 238, 0.9)', 2.2, [7, 4]);
+      drawCircle(icr.x, icr.y, rIR_px, 'rgba(251, 191, 36, 0.9)', 2.2, [4, 4]);
+      drawCircle(icr.x, icr.y, rBodyIn_px, 'rgba(244, 63, 94, 0.35)', 1.5, [3, 5]);
+
+      // Active 90-degree turn arc of Inner Car Body (R_body,in)
+      ctx.save();
+      ctx.strokeStyle = k.minClearance < 0 ? '#f43f5e' : '#10b981';
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.arc(icr.x, icr.y, rBodyIn_px, Math.PI, Math.PI * 1.5, false);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawCircle(cx, cy, r, color, lineWidth, dash) {
+      if (r <= 0) return;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      if (dash) ctx.setLineDash(dash);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSweptBodyEnvelope(width, height, k) {
+      ctx.save();
+      for (let p = 4; p <= 96; p += 4) {
+        const pose = getCarPoseAtProgress(p, k.v, k.xc, k.yc, k.R_body_in);
+        const pos = worldToScreen(pose.mx, pose.my, width, height);
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.rotate(pose.theta);
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.11)';
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.02)';
+        ctx.lineWidth = 1;
+        const wPx = k.v.W * state.scale;
+        const frontPx = (k.v.L + k.v.F) * state.scale;
+        const rearPx = k.v.R_over * state.scale;
+        ctx.beginPath();
+        ctx.roundRect(-wPx / 2, -frontPx, wPx, frontPx + rearPx, 6);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    function drawAckermannGeometry(width, height, pose, icr, k) {
+      const wheelOffsets = [
+        { x: -k.v.T / 2, y: 0 },
+        { x: k.v.T / 2, y: 0 },
+        { x: -k.v.T / 2, y: k.v.L },
+        { x: k.v.T / 2, y: k.v.L }
+      ];
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
+      ctx.lineWidth = 1.3;
+      ctx.setLineDash([4, 4]);
+
+      wheelOffsets.forEach((wo) => {
+        const wx = pose.mx + wo.x * Math.cos(pose.theta) + wo.y * Math.sin(pose.theta);
+        const wy = pose.my - wo.x * Math.sin(pose.theta) + wo.y * Math.cos(pose.theta);
+        const sp = worldToScreen(wx, wy, width, height);
+        ctx.beginPath();
+        ctx.moveTo(icr.x, icr.y);
+        ctx.lineTo(sp.x, sp.y);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    function drawVehicle(width, height, pose, k) {
+      const pos = worldToScreen(pose.mx, pose.my, width, height);
+      const wPx = k.v.W * state.scale;
+      const tPx = k.v.T * state.scale;
+      const lPx = k.v.L * state.scale;
+      const frontPx = (k.v.L + k.v.F) * state.scale;
+      const rearPx = k.v.R_over * state.scale;
+
+      const isCollidingNow = k.currentEval.isCurrentlyColliding;
+
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(pose.theta);
+
+      // Vehicle Body Shell
+      ctx.fillStyle = isCollidingNow ? 'rgba(244, 63, 94, 0.38)' : 'rgba(14, 165, 233, 0.24)';
+      ctx.strokeStyle = isCollidingNow ? '#f43f5e' : '#38bdf8';
+      ctx.lineWidth = isCollidingNow ? 3 : 2.2;
+
+      ctx.beginPath();
+      ctx.roundRect(-wPx / 2, -frontPx, wPx, frontPx + rearPx, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // Highlight Right-hand Inner Body Edge
+      ctx.strokeStyle = isCollidingNow ? '#fda4af' : '#f43f5e';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(wPx / 2, -frontPx + 7);
+      ctx.lineTo(wPx / 2, rearPx - 7);
+      ctx.stroke();
+
+      // EXPLICIT COLLISION DAMAGE SEGMENT HIGHLIGHT ON RIGHT REAR DOOR / FENDER
+      if (isCollidingNow && k.currentEval.sImpactStart !== null) {
+        const yStartPx = -k.currentEval.sImpactEnd * state.scale;
+        const yEndPx = -k.currentEval.sImpactStart * state.scale;
+
+        ctx.save();
+        ctx.strokeStyle = '#fef08a';
+        ctx.shadowColor = '#f43f5e';
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(wPx / 2, yStartPx - 4);
+        ctx.lineTo(wPx / 2, yEndPx + 4);
+        ctx.stroke();
+
+        // Red hazard stripes on the scraped right door area
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.75)';
+        ctx.fillRect(wPx / 2 - 12, yStartPx - 4, 12, (yEndPx - yStartPx) + 8);
+        ctx.restore();
+      }
+
+      // Roof Cabin & Windshield
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(-wPx * 0.38, -lPx * 0.85, wPx * 0.76, lPx * 0.95, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // B-Pillar Reference Line (Driver seat line)
+      const bPillarY = -lPx * 0.45;
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.9)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(-wPx / 2, bPillarY);
+      ctx.lineTo(wPx / 2, bPillarY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 10px "Noto Sans KR", sans-serif';
+      ctx.fillText('B필러(운전석)', -wPx * 0.32, bPillarY - 4);
+
+      // Axles
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.85)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(-tPx / 2, 0);
+      ctx.lineTo(tPx / 2, 0);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.8)';
+      ctx.beginPath();
+      ctx.moveTo(-tPx / 2, -lPx);
+      ctx.lineTo(tPx / 2, -lPx);
+      ctx.stroke();
+
+      // 4 Tires
+      const tireW = 0.25 * state.scale;
+      const tireL = 0.64 * state.scale;
+      const steerIn = pose.turnRatio * k.alphaInner;
+      const steerOut = pose.turnRatio * k.alphaOuter;
+
+      drawTire(-tPx / 2, 0, tireW, tireL, 0, '#64748b');
+      drawTire(tPx / 2, 0, tireW, tireL, 0, '#fbbf24');
+      drawTire(-tPx / 2, -lPx, tireW, tireL, steerOut, '#64748b');
+      drawTire(tPx / 2, -lPx, tireW, tireL, steerIn, '#22d3ee');
+
+      // Rear Axle Center M
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawTire(x, y, w, l, angleRad, strokeColor) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angleRad);
+      ctx.fillStyle = '#090d16';
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -l / 2, w, l, 3);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // 6. Explicit Dramatic Collision Effect & Callout Renderer
+    // =========================================================================
+    function drawDramaticCollisionEffect(width, height, origin, k) {
+      const impactPt = worldToScreen(
+        Math.max(0, k.currentEval.closestWorldPt.x),
+        Math.min(0, k.currentEval.closestWorldPt.y),
+        width,
+        height
+      );
+
+      // 1. Expanding Red/Amber Shockwave Rings at Impact Point / Corner O(0,0)
+      const r1 = 12 + (state.pulsePhase % 1) * 46;
+      const r2 = 12 + ((state.pulsePhase + 0.5) % 1) * 46;
+
+      ctx.save();
+      ctx.strokeStyle = `rgba(244, 63, 94, ${1 - (state.pulsePhase % 1)})`;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, r1, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(251, 191, 36, ${1 - ((state.pulsePhase + 0.5) % 1)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, r2, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Glowing Impact Starburst at O(0,0)
+      const grad = ctx.createRadialGradient(origin.x, origin.y, 2, origin.x, origin.y, 32);
+      grad.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
+      grad.addColorStop(0.4, 'rgba(244, 63, 94, 0.8)');
+      grad.addColorStop(1, 'rgba(244, 63, 94, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 32, 0, Math.PI * 2);
+      ctx.fill();
+
+      // High-Contrast Floating Callout Tag pointing right at the scraped rear door
+      const penCm = Math.abs(k.currentEval.minDist * 100).toFixed(1);
+      const boxX = origin.x - 215;
+      const boxY = origin.y + 22;
+
+      ctx.fillStyle = 'rgba(136, 19, 55, 0.95)';
+      ctx.strokeStyle = '#fda4af';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, 200, 48, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // Pointer line to O(0,0)
+      ctx.beginPath();
+      ctx.moveTo(boxX + 190, boxY);
+      ctx.lineTo(origin.x, origin.y);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fef08a';
+      ctx.font = '900 12px "Noto Sans KR", sans-serif';
+      ctx.fillText('💥 우측 차체 측면 충돌 발생!', boxX + 12, boxY + 20);
+      ctx.fillStyle = '#ffe4e6';
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      ctx.fillText(`침범 깊이: -${penCm} cm`, boxX + 12, boxY + 38);
+
+      ctx.restore();
+    }
+
+    function drawWarningPulseEffect(width, height, origin, k) {
+      const rWarn = 10 + (state.pulsePhase % 1) * 28;
+      ctx.save();
+      ctx.strokeStyle = `rgba(251, 191, 36, ${1 - (state.pulsePhase % 1)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, rWarn, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawAnnotations(width, height, origin, icr, k) {
+      ctx.save();
+
+      // 1. Corner Point O(0,0) Marker
+      ctx.fillStyle = k.currentEval.isCurrentlyColliding ? '#f43f5e' : '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#fde68a';
+      ctx.font = 'bold 12px "JetBrains Mono", monospace';
+      ctx.fillText('모서리 O(0,0)', origin.x + 10, origin.y + 16);
+
+      // 2. Instantaneous Center of Rotation C(xc, yc)
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(icr.x, icr.y, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#7dd3fc';
+      ctx.font = 'bold 12px "JetBrains Mono", monospace';
+      ctx.fillText(`회전중심 C(${k.xc.toFixed(2)}, ${k.yc.toFixed(2)})`, icr.x + 12, icr.y + 4);
+
+      // 3. Distance Line Segment d(C, O)
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.8)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(icr.x, icr.y);
+      ctx.lineTo(origin.x, origin.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 4. Label ΔR band
+      const angleLabel = Math.PI * 1.22;
+      const rMid = ((k.R_IF + k.R_IR) / 2) * state.scale;
+      const lx = icr.x + rMid * Math.cos(angleLabel);
+      const ly = icr.y + rMid * Math.sin(angleLabel);
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.8)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(lx - 64, ly - 13, 128, 24, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#fda4af';
+      ctx.font = 'bold 11px "Noto Sans KR", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`내륜차 ΔR = ${(k.deltaR * 100).toFixed(1)}cm`, lx, ly + 3);
+      ctx.textAlign = 'left';
+
+      // 5. Initial Wall Clearance D indicator
+      const refY = Math.min(k.yc - 1.1, -1.4);
+      const wallPt = worldToScreen(0, refY, width, height);
+      const carRightPt = worldToScreen(-state.D, refY, width, height);
+
+      ctx.strokeStyle = '#34d399';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(carRightPt.x, carRightPt.y);
+      ctx.lineTo(wallPt.x, wallPt.y);
+      ctx.stroke();
+
+      ctx.fillStyle = '#6ee7b7';
+      ctx.font = 'bold 11px "JetBrains Mono", monospace';
+      ctx.fillText(`초기이격 D=${state.D.toFixed(2)}m`, carRightPt.x - 18, carRightPt.y - 7);
+
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // 7. Animation Loop & Interactive Controls
+    // =========================================================================
+    let lastFrameTime = performance.now();
+
+    function masterTick(now) {
+      const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+      lastFrameTime = now;
+
+      state.pulsePhase = (state.pulsePhase + dt * 1.8) % 100;
+      if (state.shakeIntensity > 0) {
+        state.shakeIntensity = Math.max(0, state.shakeIntensity - dt * 18);
+      }
+
+      if (state.isPlaying) {
+        const prevProgress = state.progress;
+        // Base speed: 18% progress per second at 1.0x
+        state.progress += dt * 18 * state.speedMultiplier;
+
+        const k = computeKinematics();
+
+        if (k.currentEval.isCurrentlyColliding) {
+          spawnCollisionSparks(0, 0, 3);
+          state.shakeIntensity = 5.5;
+
+          // Auto-pause on exact moment of impact if enabled and not yet paused for this collision
+          if (state.autoPauseOnImpact && !state.hasPausedForCurrentImpact && prevProgress < 65) {
+            state.hasPausedForCurrentImpact = true;
+            togglePlay(false);
+            impactFreezeToast.classList.remove('hidden');
+          }
+        }
+
+        if (state.progress >= 100) {
+          state.progress = 0;
+          state.hasPausedForCurrentImpact = false;
+          impactFreezeToast.classList.add('hidden');
+        }
+        sliderProgress.value = state.progress;
+      } else {
+        // Even when paused on impact, keep subtle sparks/pulse alive if currently colliding
+        const k = computeKinematics();
+        if (k.currentEval.isCurrentlyColliding && Math.random() < 0.25) {
+          spawnCollisionSparks(0, 0, 1);
+        }
+      }
+
+      renderScene();
+      requestAnimationFrame(masterTick);
+    }
+
+    function togglePlay(forceState) {
+      state.isPlaying = typeof forceState === 'boolean' ? forceState : !state.isPlaying;
+      const playIcon = document.getElementById('playIcon');
+      const playLabel = document.getElementById('playLabel');
+      if (state.isPlaying) {
+        playIcon.textContent = '⏸';
+        playLabel.textContent = '일시정지';
+        impactFreezeToast.classList.add('hidden');
+        if (state.progress >= 100) {
+          state.progress = 0;
+          state.hasPausedForCurrentImpact = false;
+        }
+      } else {
+        playIcon.textContent = '▶';
+        playLabel.textContent = '주행 재생';
+      }
+    }
+
+    // Event Listeners
+    selectVehicle.addEventListener('change', (e) => {
+      state.presetKey = e.target.value;
+      state.hasPausedForCurrentImpact = false;
+      renderScene();
+    });
+
+    sliderAlpha.addEventListener('input', (e) => {
+      state.alphaDeg = parseFloat(e.target.value);
+      state.hasPausedForCurrentImpact = false;
+      renderScene();
+    });
+
+    sliderD.addEventListener('input', (e) => {
+      state.D = parseFloat(e.target.value);
+      state.hasPausedForCurrentImpact = false;
+      renderScene();
+    });
+
+    sliderYc.addEventListener('input', (e) => {
+      state.yc = parseFloat(e.target.value);
+      state.hasPausedForCurrentImpact = false;
+      renderScene();
+    });
+
+    sliderProgress.addEventListener('input', (e) => {
+      if (state.isPlaying) togglePlay(false);
+      impactFreezeToast.classList.add('hidden');
+      state.progress = parseFloat(e.target.value);
+      const k = computeKinematics();
+      if (k.currentEval.isCurrentlyColliding) {
+        spawnCollisionSparks(0, 0, 4);
+      }
+      renderScene();
+    });
+
+    sliderSpeed.addEventListener('input', (e) => {
+      state.speedMultiplier = parseFloat(e.target.value);
+      renderScene();
+    });
+
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sp = parseFloat(btn.getAttribute('data-speed'));
+        state.speedMultiplier = sp;
+        sliderSpeed.value = sp;
+        renderScene();
+      });
+    });
+
+    chkAutoPauseImpact.addEventListener('change', (e) => {
+      state.autoPauseOnImpact = e.target.checked;
+    });
+
+    chkShowSwept.addEventListener('change', (e) => {
+      state.showSwept = e.target.checked;
+      renderScene();
+    });
+
+    document.getElementById('btnPlayPause').addEventListener('click', () => togglePlay());
+    document.getElementById('btnResumeAfterImpact').addEventListener('click', () => {
+      impactFreezeToast.classList.add('hidden');
+      togglePlay(true);
+    });
+
+    document.getElementById('btnResetAnim').addEventListener('click', () => {
+      togglePlay(false);
+      state.progress = 0;
+      state.hasPausedForCurrentImpact = false;
+      impactFreezeToast.classList.add('hidden');
+      sliderProgress.value = 0;
+      renderScene();
+    });
+
+    // Scenario A: Novice Driver Collision
+    document.getElementById('btnScenarioCollision').addEventListener('click', () => {
+      togglePlay(false);
+      impactFreezeToast.classList.add('hidden');
+      state.presetKey = 'suv';
+      selectVehicle.value = 'suv';
+      state.alphaDeg = 30.0;
+      state.D = 0.25;      // 25cm from wall
+      state.yc = -1.20;    // Early steering initiation
+      state.progress = 48; // Right as rear door scrapes O(0,0)
+      state.hasPausedForCurrentImpact = false;
+
+      sliderAlpha.value = state.alphaDeg;
+      sliderD.value = state.D;
+      sliderYc.value = state.yc;
+      sliderProgress.value = state.progress;
+      spawnCollisionSparks(0, 0, 12);
+      state.shakeIntensity = 7;
+      renderScene();
+    });
+
+    // Scenario B: Report Optimal Safe Trajectory
+    document.getElementById('btnScenarioSafe').addEventListener('click', () => {
+      togglePlay(false);
+      impactFreezeToast.classList.add('hidden');
+      state.presetKey = 'suv';
+      selectVehicle.value = 'suv';
+      state.alphaDeg = 30.0;
+      state.D = 0.75;      // 75cm initial clearance
+      state.yc = -0.30;    // B-pillar passes corner
+      state.progress = 54;
+      state.hasPausedForCurrentImpact = false;
+
+      sliderAlpha.value = state.alphaDeg;
+      sliderD.value = state.D;
+      sliderYc.value = state.yc;
+      sliderProgress.value = state.progress;
+      renderScene();
+    });
+
+    // Scenario C: Critical Boundary Condition (Exact 20cm Safety Margin)
+    document.getElementById('btnScenarioCritical').addEventListener('click', () => {
+      togglePlay(false);
+      impactFreezeToast.classList.add('hidden');
+      state.presetKey = 'suv';
+      selectVehicle.value = 'suv';
+      state.alphaDeg = 30.0;
+      state.D = 0.34;
+      state.yc = -0.50;
+      state.progress = 52;
+      state.hasPausedForCurrentImpact = false;
+
+      sliderAlpha.value = state.alphaDeg;
+      sliderD.value = state.D;
+      sliderYc.value = state.yc;
+      sliderProgress.value = state.progress;
+      renderScene();
+    });
+
+    // Zoom & Camera Pan Controls
+    document.getElementById('btnZoomIn').addEventListener('click', () => {
+      state.scale = Math.min(130, state.scale + 10);
+      renderScene();
+    });
+    document.getElementById('btnZoomOut').addEventListener('click', () => {
+      state.scale = Math.max(35, state.scale - 10);
+      renderScene();
+    });
+    document.getElementById('btnResetView').addEventListener('click', () => {
+      state.scale = 74;
+      state.panX = -75;
+      state.panY = 65;
+      renderScene();
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      state.isDragging = true;
+      state.dragStartX = e.clientX - state.panX;
+      state.dragStartY = e.clientY - state.panY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!state.isDragging) return;
+      state.panX = e.clientX - state.dragStartX;
+      state.panY = e.clientY - state.dragStartY;
+      renderScene();
+    });
+    window.addEventListener('mouseup', () => {
+      state.isDragging = false;
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        state.isDragging = true;
+        state.dragStartX = e.touches[0].clientX - state.panX;
+        state.dragStartY = e.touches[0].clientY - state.panY;
+      }
+    }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (!state.isDragging || e.touches.length !== 1) return;
+      state.panX = e.touches[0].clientX - state.dragStartX;
+      state.panY = e.touches[0].clientY - state.dragStartY;
+      renderScene();
+    }, { passive: true });
+    window.addEventListener('touchend', () => {
+      state.isDragging = false;
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+    window.onload = function () {
+      resizeCanvas();
+      requestAnimationFrame(masterTick);
+    };
+  </script>
+</body>
+</html>
